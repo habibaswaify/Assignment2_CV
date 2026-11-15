@@ -22,9 +22,20 @@ def harris_response(img, sd=1.0, si=2.0, k=0.05):
     img = img.astype(np.float32)
     # ---------------------------------------------------------------- TODO 1.1a ----
     # 1. Ix, Iy: blur with a Gaussian of sigma sd, then differentiate (cv2.GaussianBlur, cv2.Sobel).
+    blur = cv2.GaussianBlur(img,ksize=(0,0),sigmaX=sd)
+    Ix = cv2.Sobel(blur,dx=1,dy=0,ddepth= cv2.CV_32F)
+    Iy = cv2.Sobel(blur,dx=0,dy=1,ddepth= cv2.CV_32F)
     # 2. The entries of M: Ix*Ix, Iy*Iy and Ix*Iy, each blurred with a Gaussian of sigma si.
+    Ix_sq = cv2.GaussianBlur(Ix * Ix, ksize=(0,0),sigmaX=si)
+    Iy_sq = cv2.GaussianBlur(Iy * Iy, ksize=(0,0),sigmaX=si)
+    Ix_Iy = cv2.GaussianBlur(Ix * Iy, ksize=(0,0),sigmaX=si)
+    # M = [Ix_sq Ix_Iy|
+    #      Ix_Iy Iy_sq]
     # 3. R = det(M) - k * trace(M)^2, for every pixel at once.
-    raise NotImplementedError('TODO 1.1a in features.py, harris_response(): compute R')
+    det = (Ix_sq * Iy_sq) - (Ix_Iy ** 2)
+    trace = Ix_sq + Iy_sq
+    R = det - ( k * ( trace ** 2 ) )
+    return R
     # ---------------------------------------------------------------- end TODO -----
 
 
@@ -44,7 +55,12 @@ def detect(img, total=1000, grid=(6, 8), rel_thresh=1e-3):
     # ---------------------------------------------------------------- TODO 1.1b ----
     # Find the candidate corners: pixels whose R is the largest in their 3 x 3 neighborhood (cv2.dilate helps)
     # and above rel_thresh * R.max(). Set xs, ys (their columns and rows) and scores (their R).
-    raise NotImplementedError('TODO 1.1b in features.py, detect(): find the local maxima of R')
+    R_dil = cv2.dilate(R,np.ones((3,3)))
+    is_peak = (R == R_dil) & (R > rel_thresh * R.max())
+    
+    ys, xs = np.nonzero(is_peak)
+    scores = R[ys,xs]
+
     # ---------------------------------------------------------------- end TODO -----
     return spread_corners(xs, ys, scores, img.shape[:2], total, grid)
 
@@ -107,13 +123,24 @@ def describe(img, kps, oriented=True, sigma_ori=4.5, spacing=5, n=8):
         # ------------------------------------------------------------ TODO 1.2a ----
         # theta: the angle of the smoothed gradient (gx, gy) at the corner if oriented, else 0. x and y are
         # floats: convert them to int to index gx and gy.
+        x = int(x)
+        y = int(y)
+ 
+        theta = np.arctan2(gy[y, x], gx[y, x]) if oriented else 0.0
+        c = np.cos(theta)
+        s = np.sin(theta)
+        
         # X, Y: (n, n) float32 sample positions: the offsets (U, V) rotated by theta, plus (x, y).
-        raise NotImplementedError('TODO 1.2a in features.py, describe(): rotate the sample grid')
+        X = (U * c - V * s + x).astype(np.float32)
+        Y = (U * s + V * c + y).astype(np.float32)
+        
         # ------------------------------------------------------------ end TODO -----
         patch = cv2.remap(b, X, Y, cv2.INTER_LINEAR).ravel()               # bilinear samples at (X, Y)
         # ------------------------------------------------------------ TODO 1.2b ----
         # Normalize the patch to zero mean and unit standard deviation (guard against a std of 0).
-        raise NotImplementedError('TODO 1.2b in features.py, describe(): normalize the patch')
+        mu = np.mean(patch)
+        std = np.std(patch)
+        patch = (patch - mu) / (std if std > 0 else 1)
         # ------------------------------------------------------------ end TODO -----
         keep.append((x, y)); desc.append(patch)
     return np.array(keep, float).reshape(-1, 2), np.array(desc, np.float32).reshape(-1, n * n)
@@ -164,7 +191,14 @@ def match(d1, d2, ratio=0.8):
     # ---------------------------------------------------------------- TODO 1.2c ----
     # For every row i of d, find its nearest and second-nearest columns. Keep (i, nearest) when the nearest distance
     # is below ratio times the second-nearest. Return them as a (K, 2) integer array.
-    raise NotImplementedError('TODO 1.2c in features.py, match(): nearest neighbor and ratio test')
+    nearest_pairs = []
+    for i in range(d.shape[0]):
+        idx = np.argsort(d[i])[:2] 
+        nearest,second_nearest = d[i,idx]
+        if nearest < (ratio * second_nearest):
+            nearest_pairs.append((i,idx[0]))
+    return np.asarray(nearest_pairs)
+    
     # ---------------------------------------------------------------- end TODO -----
 
 
